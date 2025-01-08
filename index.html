@@ -4,7 +4,23 @@
     <meta charset="utf-8" />
     <meta name="referrer" content="no-referrer" />
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+
+    <link href="./src/css/jsoneditor.css" rel="stylesheet" type="text/css" />
+    <link href="./src/css/json.css" rel="stylesheet" type="text/css" />
+    <link href="./src/css/toast.min.css" rel="stylesheet" type="text/css" />
+
+    <script src="./src/js/cache.js"></script>
+    <script src="./src/js/localforage.min.js"></script>
+    <script src="./src/js/jsoneditor.js"></script>
+    <script src="./src/js/toast.min.js"></script>
+
     <style>
+      body {
+        overflow: hidden;
+      }
+      #jsoneditor {
+        height: 80% !important;
+      }
       table {
         border-collapse: collapse;
         width: 100%;
@@ -100,8 +116,8 @@
       #managePanel {
         position: fixed;
         top: 0;
-        right: -500px;
-        width: 400px;
+        right: -650px;
+        width: 550px;
         height: 100vh;
         background: white;
         box-shadow: -2px 0 8px rgba(0, 0, 0, 0.15);
@@ -187,24 +203,13 @@
 
     <div id="managePanel">
       <div class="panel-header">
-        <h3>股票管理</h3>
+        <h3>股票配置</h3>
         <button class="close-btn" onclick="showManagePanel()">&times;</button>
       </div>
-      <div style="margin-bottom: 20px">
-        <button class="update-btn" onclick="addNewStock()">添加新股票</button>
-      </div>
-      <table id="manageTable">
-        <thead>
-          <tr>
-            <th>代码</th>
-            <th>成本</th>
-            <th>持仓</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-        <tbody id="manageTableBody"></tbody>
-      </table>
+      <div id="jsoneditor"></div>
     </div>
+
+    <script src="./src/js/json.js"></script>
 
     <table>
       <thead>
@@ -228,11 +233,12 @@
 
     <script>
       // 股票配置数据
-      const stockConfig = {
-        cost: [0, 31.783, 51.113, 38.088, 1.018],
-        position: [0, 2000, 400, 600, 20000],
-        secids: "1.000001, 1.601633, 0.002230, 0.002864, 1.588080",
-        fields: "f12,f14,f2,f18,f4,f3",
+      let stockConfig = {
+        ip: "",
+        secids: "",
+        cost: [],
+        position: [],
+        fields: "f2,f3,f4,f12,f14,f18",
       };
 
       // 添加交易时间判断函数
@@ -264,11 +270,10 @@
             return;
           }
 
-          const url = `https://push2.eastmoney.com/api/qt/ulist.np/get?fltt=2&fields=${stockConfig.fields}&secids=${stockConfig.secids}`;
+          const url = `${stockConfig.ip}/stock/list?fields=${stockConfig.fields}&secids=${stockConfig.secids}`;
           const response = await axios.get(url);
           const data = response.data;
-
-          if (data && data.data && data.data.diff) {
+          if (data.data && data.data.diff) {
             // 转换数据为股票列表
             const stockList = data.data.diff.map((item, index) => {
               return {
@@ -308,11 +313,11 @@
         return val > 0 ? "up" : val < 0 ? "down" : "";
       }
 
-      function updateTableContent(stockList, todayProfit, allProfit) {
+      async function updateTableContent(stockList, todayProfit, allProfit) {
         const tbody = document.getElementById("stockTableBody");
 
         // 获取保存的设置
-        const savedData = JSON.parse(localStorage.getItem("stockSettings") || "{}");
+        const savedData = await localforage.getItem("stockSettings");
 
         // 生成股票数据行
         const stockRows = stockList
@@ -349,94 +354,6 @@
 
         // 更新表格内容
         tbody.innerHTML = stockRows + summaryRow;
-
-        // 重新添加编辑功能
-        addEditableFeatures();
-      }
-
-      function addEditableFeatures() {
-        document.querySelectorAll("tbody tr:not(.summary-row)").forEach((row, index) => {
-          // 成本单元格
-          const costCell = row.cells[6];
-          costCell.onclick = () => makeEditable(costCell, index, "cost");
-
-          // 持仓单元格
-          const positionCell = row.cells[7];
-          positionCell.onclick = () => makeEditable(positionCell, index, "position");
-        });
-      }
-
-      function makeEditable(cell, index, field) {
-        if (cell.querySelector("input")) return;
-
-        const originalValue = cell.textContent;
-        const input = document.createElement("input");
-        input.type = "number";
-        input.value = originalValue;
-        input.className = "edit-input";
-
-        input.onblur = function () {
-          const newValue = this.value;
-          cell.textContent = newValue;
-
-          // 保存到 localStorage
-          const savedData = JSON.parse(localStorage.getItem("stockSettings") || "{}");
-          if (!savedData[field]) savedData[field] = [];
-          savedData[field][index] = parseFloat(newValue);
-          localStorage.setItem("stockSettings", JSON.stringify(savedData));
-
-          // 更新 stockConfig
-          stockConfig[field][index] = parseFloat(newValue);
-
-          // 重新计算盈亏
-          recalculateProfit();
-        };
-
-        input.onkeydown = function (e) {
-          if (e.key === "Enter") {
-            this.blur();
-          }
-        };
-
-        cell.textContent = "";
-        cell.appendChild(input);
-        input.focus();
-      }
-
-      function recalculateProfit() {
-        const rows = Array.from(document.querySelectorAll("tbody tr:not(.summary-row)"));
-
-        let todayProfit = 0;
-        let allProfit = 0;
-
-        rows.forEach((row) => {
-          const price = parseFloat(row.cells[2].textContent);
-          const cost = parseFloat(row.cells[6].textContent);
-          const position = parseFloat(row.cells[7].textContent);
-          const change = parseFloat(row.cells[4].textContent);
-
-          const dailyProfit = change * position;
-          const totalProfit = (price - cost) * position;
-
-          row.cells[8].textContent = dailyProfit.toFixed(2);
-          row.cells[9].textContent = totalProfit.toFixed(2);
-
-          // 更新颜色
-          row.cells[8].className = upOrDown(dailyProfit);
-          row.cells[9].className = upOrDown(totalProfit);
-
-          todayProfit += dailyProfit;
-          allProfit += totalProfit;
-        });
-
-        // 更新汇总行
-        const summaryRow = document.querySelector(".summary-row");
-        if (summaryRow) {
-          summaryRow.cells[1].textContent = todayProfit.toFixed(2);
-          summaryRow.cells[1].className = upOrDown(todayProfit);
-          summaryRow.cells[2].textContent = allProfit.toFixed(2);
-          summaryRow.cells[2].className = upOrDown(allProfit);
-        }
       }
 
       function showManagePanel() {
@@ -448,205 +365,22 @@
           overlay.classList.remove("show");
           // 启用页面滚动
           document.body.style.overflow = "";
+          init();
         } else {
           panel.classList.add("show");
           overlay.classList.add("show");
-          updateManageTable();
           // 禁用页面滚动
           document.body.style.overflow = "hidden";
         }
       }
 
-      function updateManageTable() {
-        const tbody = document.getElementById("manageTableBody");
-        const secidsArray = stockConfig.secids.split(",").map((s) => s.trim());
-
-        const rows = secidsArray
-          .map(
-            (secid, index) => `
-          <tr>
-            <td>${secid}</td>
-            <td>${stockConfig.cost[index]}</td>
-            <td>${stockConfig.position[index]}</td>
-            <td>
-              <button class="update-btn" onclick="editStock(${index})">编辑</button>
-              <button class="update-btn" style="background-color: #f44336" onclick="deleteStock(${index})">删除</button>
-            </td>
-          </tr>
-        `
-          )
-          .join("");
-
-        tbody.innerHTML = rows;
-      }
-
-      function addNewStock() {
-        // 创建弹窗
-        const modal = document.createElement("div");
-        modal.style.position = "fixed";
-        modal.style.top = "50%";
-        modal.style.left = "50%";
-        modal.style.transform = "translate(-50%, -50%)";
-        modal.style.backgroundColor = "white";
-        modal.style.padding = "20px";
-        modal.style.boxShadow = "0 0 10px rgba(0,0,0,0.5)";
-        modal.style.zIndex = "1001";
-
-        // 创建搜索框
-        const searchInput = document.createElement("input");
-        searchInput.type = "text";
-        searchInput.placeholder = "输入股票代码";
-        modal.appendChild(searchInput);
-
-        // 创建搜索按钮
-        const searchButton = document.createElement("button");
-        searchButton.textContent = "搜索";
-        searchButton.onclick = async function () {
-          const code = searchInput.value.trim();
-          if (!code) return;
-            try {
-              const url = `https://api.codelife.cc/stock/search?lang=cn&name=${code}`;
-              const response = await axios.get(url);
-              const data = response.data;
-              console.log('response', response);
-
-              if (data && data.data) {
-                // 清空之前的搜索结果
-                resultTable.innerHTML = '';
-
-                // 显示搜索结果
-                data.data.forEach(stock => {
-                  const row = document.createElement('tr');
-                  row.innerHTML = `
-                    <td><input type="checkbox" value="${stock.code}"></td>
-                    <td>${stock.name}</td>
-                    <td>${stock.code}</td>
-                  `;
-                  resultTable.appendChild(row);
-                });
-              } else {
-                alert('未找到相关股票');
-              }
-            } catch (error) {
-              console.error('搜索股票失败:', error);
-              alert('搜索股票失败');
-            }
-        };
-        modal.appendChild(searchButton);
-
-        // 创建结果表格
-        const resultTable = document.createElement("table");
-        resultTable.innerHTML = `
-          <thead>
-            <tr>
-              <th>选择</th>
-              <th>名称</th>
-              <th>代码</th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        `;
-        modal.appendChild(resultTable);
-
-        // 创建确认按钮
-        const confirmButton = document.createElement("button");
-        confirmButton.textContent = "确认";
-        confirmButton.onclick = function () {
-          const selectedStocks = Array.from(
-            resultTable.querySelectorAll('input[type="checkbox"]:checked')
-          ).map((input) => input.value);
-
-          if (selectedStocks.length === 0) {
-            alert("请选择至少一个股票");
-            return;
-          }
-
-          selectedStocks.forEach((code) => {
-            const cost = prompt("请输入成本价：");
-            if (!cost) return;
-
-            const position = prompt("请输入持仓数：");
-            if (!position) return;
-
-            const secidsArray = stockConfig.secids.split(",").map((s) => s.trim());
-            secidsArray.push(code);
-            stockConfig.secids = secidsArray.join(", ");
-            stockConfig.cost.push(parseFloat(cost));
-            stockConfig.position.push(parseInt(position));
-          });
-
-          // 保存到 localStorage
-          const savedData = JSON.parse(localStorage.getItem("stockSettings") || "{}");
-          savedData.cost = stockConfig.cost;
-          savedData.position = stockConfig.position;
-          savedData.secids = stockConfig.secids;
-          localStorage.setItem("stockSettings", JSON.stringify(savedData));
-
-          updateManageTable();
-          fetchStockData(); // 刷新数据
-
-          // 关闭弹窗
-          document.body.removeChild(modal);
-        };
-        modal.appendChild(confirmButton);
-
-        // 添加弹窗到页面
-        document.body.appendChild(modal);
-      }
-
-      function editStock(index) {
-        const secidsArray = stockConfig.secids.split(",").map((s) => s.trim());
-
-        const code = prompt("请输入股票代码：", secidsArray[index]);
-        if (!code) return;
-
-        const cost = prompt("请输入成本价：", stockConfig.cost[index]);
-        if (!cost) return;
-
-        const position = prompt("请输入持仓数：", stockConfig.position[index]);
-        if (!position) return;
-
-        secidsArray[index] = code;
-        stockConfig.secids = secidsArray.join(", ");
-        stockConfig.cost[index] = parseFloat(cost);
-        stockConfig.position[index] = parseInt(position);
-
-        // 保存到 localStorage
-        const savedData = JSON.parse(localStorage.getItem("stockSettings") || "{}");
-        savedData.cost = stockConfig.cost;
-        savedData.position = stockConfig.position;
-        savedData.secids = stockConfig.secids;
-        localStorage.setItem("stockSettings", JSON.stringify(savedData));
-
-        updateManageTable();
-        fetchStockData(); // 刷新数据
-      }
-
-      function deleteStock(index) {
-        if (!confirm("确定要删除这支股票吗？")) return;
-
-        const secidsArray = stockConfig.secids.split(",").map((s) => s.trim());
-        secidsArray.splice(index, 1);
-        stockConfig.secids = secidsArray.join(", ");
-        stockConfig.cost.splice(index, 1);
-        stockConfig.position.splice(index, 1);
-
-        // 保存到 localStorage
-        const savedData = JSON.parse(localStorage.getItem("stockSettings") || "{}");
-        savedData.cost = stockConfig.cost;
-        savedData.position = stockConfig.position;
-        savedData.secids = stockConfig.secids;
-        localStorage.setItem("stockSettings", JSON.stringify(savedData));
-
-        updateManageTable();
-        fetchStockData(); // 刷新数据
-      }
-
-      window.onload = function () {
-        const savedData = JSON.parse(localStorage.getItem("stockSettings") || "{}");
-        if (savedData.cost) stockConfig.cost = savedData.cost;
-        if (savedData.position) stockConfig.position = savedData.position;
-        if (savedData.secids) stockConfig.secids = savedData.secids;
+      async function init() {
+        const savedData = await localforage.getItem("stockSettings");
+        if (savedData) {
+          stockConfig = {...stockConfig, ...savedData};
+        } else {
+          alert("请先进行股票信息配置！！！");
+        }
 
         // 启动自动刷新
         fetchStockData();
@@ -663,7 +397,9 @@
 
         updateCurrentTime();
         setInterval(updateCurrentTime, 1000);
-      };
+      }
+
+      window.onload = init;
 
       // 添加点击遮罩层关闭面板的功能
       document.getElementById("overlay").addEventListener("click", function () {
