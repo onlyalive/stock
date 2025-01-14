@@ -68,17 +68,10 @@
         font-weight: bold;
         background-color: #f8f8f8;
       }
-
-      table td:nth-child(7),
-      table td:nth-child(8) {
-        width: 100px;
-        min-width: 100px;
-        max-width: 100px;
-        padding: 0;
-      }
-
+      
       td {
         height: 40px;
+        width: auto;
         padding: 0 8px;
         vertical-align: middle;
       }
@@ -217,7 +210,7 @@
           <th>代码</th>
           <th>名称</th>
           <th>现价</th>
-          <th>昨收</th>
+          <!-- <th>昨收</th> -->
           <th>涨跌额</th>
           <th>涨跌幅(%)</th>
           <th>成本</th>
@@ -331,22 +324,22 @@
             <td>${stock.code}</td>
             <td>${stock.name}</td>
             <td>${stock.price}</td>
-            <td>${stock.yesterdayClose}</td>
+            <!-- <td>${stock.yesterdayClose}</td> -->
             <td class="${upOrDown(stock.change)}">${stock.change}</td>
             <td class="${upOrDown(stock.changePercent)}">${stock.changePercent}%</td>
-            <td class="editable">${savedCost}</td>
-            <td class="editable">${savedPosition}</td>
+            <td>${savedCost}</td>
+            <td>${savedPosition}</td>
             <td class="${upOrDown(stock.profit)}">${stock.profit}</td>
             <td class="${upOrDown(stock.totalProfit)}">${stock.totalProfit}</td>
           </tr>
         `;
           })
           .join("");
-
+        const thsLen = document.querySelectorAll("thead th").length;
         // 添加汇总行
         const summaryRow = `
         <tr class="summary-row">
-          <td colspan="8">汇总</td>
+          <td colspan=${thsLen - 2}>汇总</td>
           <td class="${upOrDown(todayProfit)}">${todayProfit.toFixed(2)}</td>
           <td class="${upOrDown(allProfit)}">${allProfit.toFixed(2)}</td>
         </tr>
@@ -377,7 +370,7 @@
       async function init() {
         const savedData = await localforage.getItem("stockSettings");
         if (savedData) {
-          stockConfig = {...stockConfig, ...savedData};
+          stockConfig = { ...stockConfig, ...savedData };
         } else {
           alert("请先进行股票信息配置！！！");
         }
