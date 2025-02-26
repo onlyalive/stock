@@ -3,8 +3,6 @@
   <head>
     <meta charset="utf-8" />
     <meta name="referrer" content="no-referrer" />
-    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
-
     <link href="./src/css/jsoneditor.css" rel="stylesheet" type="text/css" />
     <link href="./src/css/json.css" rel="stylesheet" type="text/css" />
     <link href="./src/css/toast.min.css" rel="stylesheet" type="text/css" />
@@ -34,7 +32,7 @@
       }
 
       th {
-        background-color: #f2f2f2;
+        background-color: #f2b155;
       }
 
       .up {
@@ -68,7 +66,7 @@
         font-weight: bold;
         background-color: #f8f8f8;
       }
-      
+
       td {
         height: 40px;
         width: auto;
@@ -217,6 +215,7 @@
           <th>持仓</th>
           <th>单日盈亏</th>
           <th>累计盈亏</th>
+          <th>市值</th>
         </tr>
       </thead>
       <tbody id="stockTableBody">
@@ -260,12 +259,24 @@
           if (!isTradeTime()) {
             // 非交易时间，延长刷新间隔到10分钟
             setTimeout(fetchStockData, 600000);
-            return;
+            // return;
           }
 
           const url = `${stockConfig.ip}/stock/list?fields=${stockConfig.fields}&secids=${stockConfig.secids}`;
-          const response = await axios.get(url);
-          const data = response.data;
+          const data = await fetch(url)
+            .then((response) => {
+              if (!response.ok) {
+                throw new Error("请求失败");
+              }
+              return response.json(); // 将响应解析为 JSON 格式
+            })
+            .then((data) => {
+              return data;
+            })
+            .catch((error) => {
+              // 处理错误
+              console.error("请求错误:", error);
+            });
           if (data.data && data.data.diff) {
             // 转换数据为股票列表
             const stockList = data.data.diff.map((item, index) => {
@@ -283,15 +294,20 @@
                   (item.f2 - stockConfig.cost[index]) *
                   stockConfig.position[index]
                 ).toFixed(2),
+                marketValue: (item.f2 * stockConfig.position[index]).toFixed(2),
               };
             });
 
             // 计算总盈亏
             const todayProfit = stockList.reduce((sum, stock) => sum + Number(stock.profit), 0);
             const allProfit = stockList.reduce((sum, stock) => sum + Number(stock.totalProfit), 0);
+            const marketValue = stockList.reduce(
+              (sum, stock) => sum + Number(stock.marketValue),
+              0
+            );
 
             // 更新表格内容
-            updateTableContent(stockList, todayProfit, allProfit);
+            updateTableContent(stockList, todayProfit, allProfit, marketValue);
           }
 
           // 交易时间内3秒刷新一次
@@ -306,7 +322,11 @@
         return val > 0 ? "up" : val < 0 ? "down" : "";
       }
 
-      async function updateTableContent(stockList, todayProfit, allProfit) {
+      function hiddenNull(val, savedPosition) {
+        return savedPosition == 0 ? "" : val;
+      }
+
+      async function updateTableContent(stockList, todayProfit, allProfit, marketValue) {
         const tbody = document.getElementById("stockTableBody");
 
         // 获取保存的设置
@@ -320,17 +340,21 @@
             const savedPosition = savedData.position?.[index] || stock.position;
 
             return `
-          <tr>
+          <tr style="${savedPosition == 0 ? "background-color: #f0f0f0;" : ""}">
             <td>${stock.code}</td>
             <td>${stock.name}</td>
             <td>${stock.price}</td>
             <!-- <td>${stock.yesterdayClose}</td> -->
             <td class="${upOrDown(stock.change)}">${stock.change}</td>
             <td class="${upOrDown(stock.changePercent)}">${stock.changePercent}%</td>
-            <td>${savedCost}</td>
-            <td>${savedPosition}</td>
-            <td class="${upOrDown(stock.profit)}">${stock.profit}</td>
-            <td class="${upOrDown(stock.totalProfit)}">${stock.totalProfit}</td>
+            <td>${hiddenNull(savedCost, savedPosition)}</td>
+            <td>${hiddenNull(savedPosition, savedPosition)}</td>
+            <td class="${upOrDown(stock.profit)}">${hiddenNull(stock.profit, savedPosition)}</td>
+            <td class="${upOrDown(stock.totalProfit)}">${hiddenNull(
+              stock.totalProfit,
+              savedPosition
+            )}</td>
+            <td>${hiddenNull(stock.marketValue, savedPosition)}</td>
           </tr>
         `;
           })
@@ -339,9 +363,10 @@
         // 添加汇总行
         const summaryRow = `
         <tr class="summary-row">
-          <td colspan=${thsLen - 2}>汇总</td>
+          <td colspan=${thsLen - 3}>汇总</td>
           <td class="${upOrDown(todayProfit)}">${todayProfit.toFixed(2)}</td>
           <td class="${upOrDown(allProfit)}">${allProfit.toFixed(2)}</td>
+          <td>${marketValue.toFixed(2)}</td>
         </tr>
       `;
 
