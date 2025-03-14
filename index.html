@@ -262,7 +262,10 @@
             // return;
           }
 
-          const url = `${stockConfig.ip}/stock/list?fields=${stockConfig.fields}&secids=${stockConfig.secids}`;
+          let url = `${stockConfig.ip}`;
+          url += url.includes('/') ? '' : '/stock/list';
+          url += url.includes('?') ? '&' : '?';
+          url += `fields=${stockConfig.fields}&secids=${stockConfig.secids}`;
           const data = await fetch(url)
             .then((response) => {
               if (!response.ok) {
